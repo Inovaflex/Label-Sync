@@ -1,0 +1,164 @@
+blueprint:
+  name: Sync Device Labels to Entities (Configurable)
+  description: >
+    Keeps entity labels in sync with their device labels when the device has a
+    specific label (default: "sync"). Adds missing labels and removes labels that
+    no longer exist on the device.
+
+  domain: automation
+  author: Tomas Haglund
+  source_url: https://github.com/Inovaflex/homeassistant-blueprints
+  homeassistant:
+    min_version: 2025.10.0
+
+  input:
+    sync_label_name:
+      name: Sync Label Name
+      description: The device label name that enables syncing for that device
+      default: sync
+    log_level:
+      name: Log Level
+      description: The verbosity level for log messages
+      default: info
+      selector:
+        select:
+          options:
+            - info
+            - debug
+            - warning
+
+triggers:
+  - trigger: event
+    event_type: device_registry_updated
+  - trigger: event
+    event_type: label_sync_test  # manual test trigger
+
+variables:
+  sync_label_name: !input sync_label_name
+  log_level: !input log_level
+
+  dev: >
+    {% if 'device_id' in trigger.event.data %}
+      {{ trigger.event.data.device_id }}
+    {% else %}
+      none
+    {% endif %}
+
+  device_labels: >
+    {% if dev %}
+      {% set raw_labels = labels(dev) %}
+      {% if raw_labels and raw_labels | count > 0 %}
+        {% if raw_labels[0] is mapping and 'id' in raw_labels[0] %}
+          {{ raw_labels | list }}
+        {% else %}
+          {{ raw_labels | list }}
+        {% endif %}
+      {% else %}
+        []
+      {% endif %}
+    {% else %}
+      []
+    {% endif %}
+
+  device_label_names: >
+    {% if device_labels and device_labels|length > 0 %}
+      {% if device_labels[0] is mapping %}
+        {{ device_labels | map(attribute='name') | map('lower') | list }}
+      {% else %}
+        {{ device_labels | map('lower') | list }}
+      {% endif %}
+    {% else %}
+      []
+    {% endif %}
+
+  has_sync_label: >
+    {{ sync_label_name|lower in device_label_names }}
+
+  entities: >
+    {% if dev %}
+      {{ device_entities(dev) | list }}
+    {% else %}
+      []
+    {% endif %}
+
+conditions:
+  - condition: template
+    value_template: "{{ has_sync_label }}"
+
+actions:
+  - action: system_log.write
+    data:
+      level: "{{ log_level }}"
+      message: >
+        [LabelSync] Starting sync for {{ dev }} using label '{{ sync_label_name }}'
+        with labels={{ device_label_names }}
+
+  - repeat:
+      for_each: "{{ entities }}"
+      sequence:
+        - variables:
+            entity: "{{ repeat.item }}"
+
+        # --- ADD missing labels ---
+        - repeat:
+            for_each: "{{ device_labels }}"
+            sequence:
+              - choose:
+                  - conditions:
+                      - condition: template
+                        value_template: >
+                          {{ repeat.item.name|lower != sync_label_name|lower if repeat.item is mapping else repeat.item|lower != sync_label_name|lower }}
+                    sequence:
+                      - action: homeassistant.add_label_to_entity
+                        data:
+                          entity_id: "{{ entity }}"
+                          label_id: >
+                            {% if repeat.item is mapping %}
+                              {{ repeat.item.id }}
+                            {% else %}
+                              {{ repeat.item }}
+                            {% endif %}
+
+        # --- REMOVE labels not on device ---
+        - variables:
+            entity_labels: "{{ labels(entity) or [] }}"
+        - repeat:
+            for_each: "{{ entity_labels }}"
+            sequence:
+              - variables:
+                  label_name: >
+                    {% if repeat.item is mapping %}
+                      {{ repeat.item.name|lower }}
+                    {% else %}
+                      {{ repeat.item|lower }}
+                    {% endif %}
+                  label_id: >
+                    {% if repeat.item is mapping %}
+                      {{ repeat.item.id }}
+                    {% else %}
+                      {{ repeat.item }}
+                    {% endif %}
+              - choose:
+                  - conditions:
+                      - condition: template
+                        value_template: >
+                          {{ label_name != sync_label_name|lower and label_name not in device_label_names }}
+                    sequence:
+                      - action: system_log.write
+                        data:
+                          level: "{{ log_level }}"
+                          message: >
+                            [LabelSync] Removing '{{ label_name }}' from {{ entity }}
+                      - action: homeassistant.remove_label_from_entity
+                        data:
+                          entity_id: "{{ entity }}"
+                          label_id: "{{ label_id }}"
+
+  - action: system_log.write
+    data:
+      level: "{{ log_level }}"
+      message: >
+        [LabelSync] Finished sync for {{ dev }}
+
+mode: queued
+max_exceeded: silent

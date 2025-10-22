@@ -7,7 +7,7 @@ blueprint:
 
   domain: automation
   author: Tomas Haglund
-  source_url: https://github.com/Inovaflex/homeassistant-blueprints
+  source_url: https://github.com/Inovaflex/Label-Sync
   homeassistant:
     min_version: 2025.10.0
 

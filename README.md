@@ -1,6 +1,6 @@
 # Label-Sync
 
-Keeps entity labels in sync with their device labels when the device has a specific label (default: "sync"). 
+Keeps entity (light. and/or switch. domains) labels in sync with their device labels when the device has a specific label (default: "sync"). 
 Adds missing labels and removes labels that no longer exist on the device.
 
 # Install

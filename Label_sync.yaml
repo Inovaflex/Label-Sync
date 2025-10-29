@@ -74,25 +74,23 @@ variables:
   has_sync_label: >
     {{ sync_label_name|lower in device_label_names }}
 
-  entities: >
+  entities: |
     {% if dev %}
-      {{ device_entities(dev) | list }}
+      {{ device_entities(dev) | select('search', '^(light\.|switch\.)') | list }}
     {% else %}
       []
     {% endif %}
-
 conditions:
-  - condition: template
-    value_template: "{{ has_sync_label }}"
-
+- condition: template
+  value_template: '{{ has_sync_label }}'
 actions:
-  - action: system_log.write
-    data:
-      level: "{{ log_level }}"
-      message: >
-        [LabelSync] Starting sync for {{ dev }} using label '{{ sync_label_name }}'
-        with labels={{ device_label_names }}
+- action: system_log.write
+  data:
+    level: '{{ log_level }}'
+    message: '[LabelSync] Starting sync for {{ dev }} using label ''{{ sync_label_name
+      }}'' with labels={{ device_label_names }} and entities={{ entities }}
 
+      '
   - repeat:
       for_each: "{{ entities }}"
       sequence:
